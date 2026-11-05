@@ -1,0 +1,19 @@
+{
+  "name": "carrom",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @carrom/client",
+    "build": "npm run build -w @carrom/client",
+    "typecheck": "tsc -b packages/core packages/client",
+    "test": "tsx packages/core/test/sim.ts && tsx packages/core/test/shot.ts && tsx packages/core/test/rules.ts && tsx packages/core/test/match.ts && tsx packages/core/test/ai.ts",
+    "build:itch": "npm run build -w @carrom/client -- --outDir ../../build/itch --emptyOutDir && node scripts/zip-itch.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "tsx": "^4.19.0"
+  }
+}

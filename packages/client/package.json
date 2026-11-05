@@ -1,0 +1,19 @@
+{
+  "name": "@carrom/client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit -p . && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@carrom/core": "*",
+    "phaser": "4.2.1"
+  },
+  "devDependencies": {
+    "adm-zip": "^0.6.1",
+    "vite": "^6.0.0"
+  }
+}

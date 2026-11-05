@@ -1,0 +1,17 @@
+node_modules
+dist
+build/
+*.tsbuildinfo
+.vite
+.DS_Store
+*.log
+
+# Archivos temporales de trabajo
+.preview-build
+.preview-pack.tgz
+_to_delete
+
+# La música no se publica en el repositorio (cada pista tiene su propia licencia).
+# Pon tus .mp3 en packages/client/public/assets/music/ para tenerla en tu copia local;
+# si no hay pistas, el juego funciona sin música.
+packages/client/public/assets/music/*.mp3
