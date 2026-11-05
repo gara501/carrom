@@ -18,6 +18,7 @@ export const PAL = {
   striker: 0x2aa5e8,
   bad: 0xe5484d,
   blue: 0x1e9fd8,
+  blueCss: '#1e9fd8',
   gold: 0xffc83d,
 } as const;
 

@@ -3,6 +3,7 @@ import Phaser from 'phaser';
 import { BootScene } from './scenes/BootScene';
 import { MenuScene } from './scenes/MenuScene';
 import { GameScene } from './scenes/GameScene';
+import { OnlineScene } from './scenes/OnlineScene';
 import { dpr } from './theme';
 
 async function start() {
@@ -25,7 +26,7 @@ async function start() {
     backgroundColor: '#f2eee6',
     antialias: true,
     scale: { mode: Phaser.Scale.NONE, width: w, height: h, zoom: 1 / d },
-    scene: [BootScene, MenuScene, GameScene],
+    scene: [BootScene, MenuScene, OnlineScene, GameScene],
   });
 
   // Útil para depurar desde la consola del navegador (p. ej. window.__carrom.scene.isActive('Game')).

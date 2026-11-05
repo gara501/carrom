@@ -4,3 +4,4 @@ export * from './shot';
 export * from './rules';
 export * from './match';
 export * from './ai';
+export * from './controller';

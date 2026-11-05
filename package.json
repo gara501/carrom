@@ -7,8 +7,9 @@
   ],
   "scripts": {
     "dev": "npm run dev -w @carrom/client",
+    "dev:server": "npm run dev -w @carrom/server",
     "build": "npm run build -w @carrom/client",
-    "typecheck": "tsc -b packages/core packages/client",
+    "typecheck": "tsc -b packages/core packages/client packages/server",
     "test": "tsx packages/core/test/sim.ts && tsx packages/core/test/shot.ts && tsx packages/core/test/rules.ts && tsx packages/core/test/match.ts && tsx packages/core/test/ai.ts",
     "build:itch": "npm run build -w @carrom/client -- --outDir ../../build/itch --emptyOutDir && node scripts/zip-itch.mjs"
   },

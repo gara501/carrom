@@ -42,3 +42,9 @@ Sin pistas, el juego funciona en silencio.
 - Interfaz y efectos de sonido: [UI Pack de Kenney](https://kenney.nl/assets/ui-pack), CC0.
 - Tipografía: [Play](https://fonts.google.com/specimen/Play), de Jonas Hecksher (SIL Open Font License).
 - Música: ver la pantalla de créditos del juego.
+
+## Modo en línea
+Menú → **Jugar en línea**: uno crea una sala y comparte el código de 4 letras; el otro se une con él.
+El servidor (`packages/server`, Socket.IO en Cloud Run) simula y valida cada tiro con `@carrom/core`.
+Ver `docs/cloud-run.md` para desplegarlo. Para probar en local: `npm run dev:server` y
+`VITE_SERVER_URL=http://localhost:8080 npm run dev`.

@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { BOARD, SHOT, baselinePosition, type Difficulty, type PlannedShot, type ShotParams } from '@carrom/core';
+import { BOARD, SHOT, baselinePosition, shotFromSpeed, type Difficulty, type PlannedShot, type ShotOutcome, type ShotParams } from '@carrom/core';
 import { AiRunner } from '../game/AiRunner';
 import { StrikerInput } from '../input/StrikerInput';
 import { MatchController, type AdvanceResult } from '../game/MatchController';
@@ -21,9 +21,10 @@ import { Scoreboard } from '../ui/Scoreboard';
 import { BottomBar } from '../ui/BottomBar';
 import { Toasts } from '../ui/Toasts';
 import { Modal } from '../ui/Modal';
-import { LOCAL_NAMES, aiNames, boardEndLines, describeRuleEvent, gameOverLines, type Names } from '../ui/messages';
+import { net, type ShotMsg, type Snapshot } from '../net/OnlineClient';
+import { LOCAL_NAMES, aiNames, onlineNames, boardEndLines, describeRuleEvent, gameOverLines, type Names } from '../ui/messages';
 
-export interface GameData { mode?: 'ai' | 'local'; difficulty?: Difficulty }
+export interface GameData { mode?: 'ai' | 'local' | 'online'; difficulty?: Difficulty; blitz?: boolean; snapshot?: Snapshot }
 
 type AiPhase = 'idle' | 'think' | 'move' | 'aim';
 
@@ -59,6 +60,12 @@ export class GameScene extends Phaser.Scene {
   private aiPlan: PlannedShot | null = null;
   private aiClock = 0;
   private thinkToast = false;
+  // En línea: el servidor decide el resultado de cada tiro; aquí solo se anima.
+  private online = false;
+  private mySeat: 0 | 1 = 0;
+  private shotDone = false;
+  private pending: ShotOutcome | null = null;
+  private linkUp = true;
 
   constructor() { super('Game'); }
 
@@ -68,7 +75,11 @@ export class GameScene extends Phaser.Scene {
     this.ctl = new MatchController();
     this.ctl.aiPlayer = this.opts.mode === 'ai' ? 1 : null;
     this.ctl.difficulty = diff;
-    this.names = this.opts.mode === 'ai' ? aiNames(diff) : LOCAL_NAMES;
+    this.ctl.blitz = !!this.opts.blitz;
+    this.online = this.opts.mode === 'online';
+    this.mySeat = this.online ? net.seat : 0;
+    this.shotDone = false; this.pending = null; this.linkUp = true;
+    this.names = this.online ? onlineNames(this.mySeat) : this.opts.mode === 'ai' ? aiNames(diff) : LOCAL_NAMES;
     this.aiPhase = 'idle'; this.ai = null; this.aiPlan = null;
   }
 
@@ -94,6 +105,8 @@ export class GameScene extends Phaser.Scene {
     this.bar = new BottomBar(this, {
       onPause: () => this.togglePause(),
       onRestart: () => this.startGame(),
+      onAbandon: () => this.confirmAbandon(),
+      online: this.online,
       onMusic: () => this.music.toggle(),
       onSfx: () => this.sfx.toggle(),
       onPress: () => this.sfx.play('click-a'),
@@ -111,8 +124,9 @@ export class GameScene extends Phaser.Scene {
     this.startGame();
     this.layout();
     this.scale.on('resize', this.layout, this);
-    this.events.once('shutdown', () => { this.music.stop(0); this.scale.off('resize', this.layout, this); this.toasts.clear(); });
-    this.input.keyboard?.on('keydown-R', () => this.startGame());
+    if (this.online) this.bindNet();
+    this.events.once('shutdown', () => { if (this.online) net.h = {}; this.music.stop(0); this.scale.off('resize', this.layout, this); this.toasts.clear(); });
+    this.input.keyboard?.on('keydown-R', () => { if (!this.online) this.startGame(); });
     this.input.keyboard?.on('keydown-M', () => this.bar.setStates(this.music.toggle(), this.sfx.enabled));
     this.input.keyboard?.on('keydown-N', () => this.bar.setStates(this.music.enabled, this.sfx.toggle()));
     this.input.keyboard?.on('keydown-P', () => this.togglePause());
@@ -124,9 +138,62 @@ export class GameScene extends Phaser.Scene {
     this.fx.clear();
     this.endOverlay.hide();
     this.lastTurnKey = '';
+    if (this.online) { this.applySnapshot(this.opts.snapshot!); this.hint(); return; }
     this.ctl.newGame();
     this.beginTurn();
     this.hint();
+  }
+
+  // ------------------------------------------------------------ en línea
+
+  private get myTurn() { return !this.online || this.ctl.current === this.mySeat; }
+
+  /** Adopta el estado oficial del servidor (inicio, reconexión o corrección) y reanuda el turno. */
+  private applySnapshot(s: { match: ShotOutcome['match']; layout: ShotOutcome['layout'] }) {
+    this.modal.hide(); this.endOverlay.hide();
+    this.shotDone = false; this.pending = null;
+    this.ctl.applyOutcome({ match: s.match, layout: s.layout, ruleEvents: [], matchEvents: [] });
+    this.fx.clear();
+    this.lastTurnKey = '';
+    if (this.ctl.phase === 'board') this.beginTurn();
+    else { this.strikerInput.enabled = false; this.time.delayedCall(300, () => this.showEnd()); }
+  }
+
+  private bindNet() {
+    net.h = {
+      sync: (s) => { this.toasts.show('Conexión recuperada.', 1500); this.applySnapshot(s); },
+      board: (m) => this.applySnapshot(m),
+      shot: (m) => this.onNetShot(m),
+      reject: () => net.requestSync(),
+      peer: (up) => this.toasts.show(up ? 'Tu rival volvió.' : 'Tu rival perdió la conexión. Esperando…', up ? 2000 : 4000),
+      link: (up) => { this.linkUp = up; if (!up) this.toasts.show('Conexión perdida. Reconectando…', 4000); },
+      closed: (reason) => {
+        this.modal.show({ title: 'Partida terminada', lines: [reason], buttons: [{ label: 'MENÚ', color: 'green', onClick: () => this.leaveOnline() }] });
+      },
+    };
+  }
+
+  private leaveOnline() { net.leave(); net.close(); fadeTo(this, 'Menu'); }
+
+  private onNetShot(m: ShotMsg) {
+    this.pending = m.outcome;
+    if (m.seat === this.mySeat) { this.tryFinalize(); return; } // mi propio tiro: ya lo estoy animando
+    if (!this.ctl.canAim() || this.ctl.current !== m.seat) { // desfasado: salto directo al resultado
+      this.applySnapshot(m.outcome); this.pending = null; return;
+    }
+    const p = baselinePosition(this.ctl.currentSide(), m.t);
+    this.ctl.world.moveStriker(p.x, p.y);
+    this.ctl.fire(shotFromSpeed(m.v, Math.hypot(m.v.x, m.v.y)));
+    this.sfx.play('switch-b', 0.5, 1.1);
+  }
+
+  /** El tiro se anima en local; al terminar (y llegar el resultado) se adopta el estado del servidor. */
+  private tryFinalize() {
+    if (!this.shotDone || !this.pending) return;
+    const o = this.pending;
+    this.pending = null; this.shotDone = false;
+    this.ctl.applyOutcome(o);
+    this.onShotFinished();
   }
 
   private nextBoard() {
@@ -147,7 +214,7 @@ export class GameScene extends Phaser.Scene {
       this.aiClock = 0;
       this.thinkToast = false;
     } else {
-      this.strikerInput.enabled = true;
+      this.strikerInput.enabled = this.myTurn;
     }
   }
 
@@ -158,7 +225,8 @@ export class GameScene extends Phaser.Scene {
     const key = `${this.ctl.match.boardNumber}:${b.current}`;
     if (key === this.lastTurnKey) return;
     this.lastTurnKey = key;
-    const text = this.ctl.aiPlayer !== null
+    const text = this.online ? (b.current === this.mySeat ? 'TU TURNO' : 'TURNO DE TU RIVAL')
+      : this.ctl.aiPlayer !== null
       ? (b.current === this.ctl.aiPlayer ? 'TURNO DE LA IA' : 'TU TURNO')
       : `TURNO DE ${this.names.full[b.current].toUpperCase()}`;
     this.time.delayedCall(280, () => this.showBanner(text)); // tras el fundido y el primer layout
@@ -202,6 +270,7 @@ export class GameScene extends Phaser.Scene {
 
   /** Pausa: congela la física y la IA y abre un menú con Continuar, Reiniciar y Menú. */
   private togglePause() {
+    if (this.online) { this.onlinePauseMenu(); return; }
     if (this.paused) { this.modal.hide(); this.paused = false; return; }
     if (this.endOverlay.isOpen || this.modal.isOpen) return;
     this.paused = true;
@@ -212,6 +281,49 @@ export class GameScene extends Phaser.Scene {
         { label: 'CONTINUAR', color: 'green', onClick: resume },
         { label: 'REINICIAR', color: 'yellow', onClick: () => { resume(); this.startGame(); } },
         { label: 'MENÚ', color: 'grey', onClick: () => { resume(); fadeTo(this, 'Menu'); } },
+      ],
+    });
+  }
+
+  /** Botón rojo: pide confirmación y, si se acepta, el jugador pierde la partida. */
+  private confirmAbandon() {
+    if (this.endOverlay.isOpen || this.ctl.phase === 'over') return;
+    if (this.modal.isOpen) return;
+    const wasPaused = this.paused;
+    if (!this.online) this.paused = true; // la partida se congela mientras se decide
+    const cancel = () => { if (!this.online) this.paused = wasPaused; };
+    const who = this.online ? 'Perderás la partida y tu rival será el ganador.'
+      : this.ctl.aiPlayer !== null ? 'Perderás la partida contra la IA.'
+      : `${this.names.full[this.ctl.current]} perderá la partida.`;
+    this.modal.show({
+      title: '¿Abandonar la partida?', lines: [who],
+      buttons: [
+        { label: 'ABANDONAR PARTIDA', color: 'red', onClick: () => this.abandon() },
+        { label: 'SEGUIR JUGANDO', color: 'green', onClick: cancel },
+      ],
+    });
+  }
+
+  private abandon() {
+    if (this.online) { net.resign(); return; } // el servidor responde con el final de la partida
+    this.paused = false;
+    const loser = this.ctl.aiPlayer !== null ? (this.ctl.aiPlayer === 0 ? 1 : 0) : this.ctl.current;
+    this.ctl.resign(loser);
+    this.strikerInput.enabled = false;
+    this.strikerInput.cancel();
+    this.aiPhase = 'idle'; this.ai = null; this.aiPlan = null;
+    this.time.delayedCall(200, () => this.showEnd());
+  }
+
+  /** En línea la partida no se detiene: el menú solo permite salir. */
+  private onlinePauseMenu() {
+    if (this.modal.isOpen) { this.modal.hide(); return; }
+    if (this.endOverlay.isOpen) return;
+    this.modal.show({
+      title: 'Menú', lines: [`Sala ${net.code}`, 'Si sales, la partida termina para tu rival. Para rendirte usa ABANDONAR.'],
+      buttons: [
+        { label: 'CONTINUAR', color: 'green', onClick: () => {} },
+        { label: 'SALIR DE LA PARTIDA', color: 'grey', onClick: () => this.leaveOnline() },
       ],
     });
   }
@@ -254,6 +366,7 @@ export class GameScene extends Phaser.Scene {
 
   private fire(shot: ShotParams) {
     if (this.ctl.fire(shot)) {
+      if (this.online) net.shoot(this.strikerInput.t, shot.velocity);
       this.strikerInput.enabled = false;
       this.sfx.play('switch-b', 0.5, 1.1);
     }
@@ -267,7 +380,7 @@ export class GameScene extends Phaser.Scene {
       this.pocketFeedback(e.pocket, e.kind);
       this.sfx.play('switch-a', 0.6, e.kind === 'striker' ? 0.7 : 1);
     }
-    if (r.finished) this.onShotFinished();
+    if (r.finished) { if (this.online) { this.shotDone = true; this.tryFinalize(); } else this.onShotFinished(); }
   }
 
   private onShotFinished() {
@@ -287,13 +400,13 @@ export class GameScene extends Phaser.Scene {
 
   private showEnd() {
     const m = this.ctl.match;
-    const humanWon = (w: number) => this.ctl.aiPlayer === null || w !== this.ctl.aiPlayer;
+    const humanWon = (w: number) => this.online ? w === this.mySeat : this.ctl.aiPlayer === null || w !== this.ctl.aiPlayer;
     if (m.phase === 'between') {
       const w = m.boards[m.boards.length - 1].winner;
       if (humanWon(w)) this.parts.celebrate(false); else this.parts.sad();
       this.modal.show({
         title: `Tablero ${m.boardNumber} terminado`, lines: boardEndLines(m, this.names),
-        buttons: [{ label: 'SIGUIENTE TABLERO', color: 'green', onClick: () => this.nextBoard() }],
+        buttons: [{ label: 'SIGUIENTE TABLERO', color: 'green', onClick: () => (this.online ? net.continueMatch() : this.nextBoard()) }],
       });
     } else if (m.phase === 'over') {
       const w = m.winner ?? 0;
@@ -301,8 +414,8 @@ export class GameScene extends Phaser.Scene {
       if (won) this.parts.celebrate(true); else this.parts.sad();
       const reason = boardEndLines(m, this.names)[0];
       this.endOverlay.open(this.names.win[w], () => endSummaryContent(m, this.names, won, reason), [
-        { label: 'NUEVA PARTIDA', color: 'green', primary: true, onClick: () => this.startGame() },
-        { label: 'MENÚ', color: 'grey', onClick: () => fadeTo(this, 'Menu') },
+        { label: 'NUEVA PARTIDA', color: 'green', primary: true, onClick: () => (this.online ? net.continueMatch() : this.startGame()) },
+        { label: 'MENÚ', color: 'grey', onClick: () => (this.online ? this.leaveOnline() : fadeTo(this, 'Menu')) },
       ]);
     }
   }
@@ -329,7 +442,7 @@ export class GameScene extends Phaser.Scene {
       const grow = Math.min(1, this.aiClock / 450);
       drawAim(this.aimG, striker, this.aiPull(this.aiPlan, grow), this.aiPlan.shot, this.ctl.world.pieces, true);
     }
-    if (this.ctl.canAim() && !this.ctl.isAiTurn()) {
+    if (this.ctl.canAim() && !this.ctl.isAiTurn() && this.myTurn) {
       const r = trackRect(this.ctl.currentSide());
       const a = 0.45 + 0.25 * Math.sin(now / 280);
       this.aimG.lineStyle(5, PAL.blue, a).strokeRoundedRect(r.rx, r.ry, r.rw, r.rh, r.pad);

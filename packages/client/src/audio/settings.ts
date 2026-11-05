@@ -1,10 +1,10 @@
 import type { Difficulty } from '@carrom/core';
 
 /** Preferencias del jugador, guardadas en el navegador (si el almacenamiento no está disponible, solo en memoria). */
-export interface Settings { music: boolean; sfx: boolean; difficulty: Difficulty }
+export interface Settings { music: boolean; sfx: boolean; difficulty: Difficulty; blitz: boolean }
 
 const KEY = 'carrom:settings:v1';
-const DEFAULTS: Settings = { music: true, sfx: true, difficulty: 'medium' };
+const DEFAULTS: Settings = { music: true, sfx: true, difficulty: 'medium', blitz: true };
 
 function load(): Settings {
   try {

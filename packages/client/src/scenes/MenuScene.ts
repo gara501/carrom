@@ -27,6 +27,7 @@ const RULES = [
   "Embolsar el striker es falta: se devuelve una pieza tuya al centro (o quedas en deuda).",
   "Pierdes el tablero si embolsas todas tus piezas dejando la reina, o la última pieza del rival.",
   "Ganas el tablero sumando las piezas que le quedan al rival. La partida es a 25 puntos u 8 tableros; con 22 o más ya no se cobra la reina.",
+  "Modo relámpago: se juega un solo tablero y gana quien lo gane. Se elige con el botón MODO del menú.",
 ];
 
 /** Menú principal: título, monedas flotantes de fondo y botones de Kenney. */
@@ -96,7 +97,7 @@ export class MenuScene extends Phaser.Scene {
     type Item = {
       label: string;
       style: "gloss" | "border";
-      color: "blue" | "green" | "grey" | "red";
+      color: "blue" | "green" | "grey" | "red" | "yellow";
       onClick: () => void;
       disabled?: boolean;
     };
@@ -104,7 +105,7 @@ export class MenuScene extends Phaser.Scene {
       (mode: "ai" | "local", difficulty?: "easy" | "medium" | "hard") => () =>
         {
           if (difficulty) saveSettings({ difficulty });
-          fadeTo(this, 'Game', { mode, difficulty });
+          fadeTo(this, 'Game', { mode, difficulty, blitz: settings.blitz });
         };
     const rules = () =>
       this.modal.show({
@@ -136,11 +137,30 @@ export class MenuScene extends Phaser.Scene {
             ],
             [
               {
-                label: "EN LÍNEA (PRÓXIMAMENTE)",
+                label: "JUGAR EN LÍNEA",
                 style: "border",
-                color: "grey",
-                onClick: () => {},
-                disabled: true,
+                color: "blue",
+                onClick: () => fadeTo(this, "Online"),
+              },
+            ],
+            [
+              {
+                label: "CLÁSICO",
+                style: settings.blitz ? "border" : "gloss",
+                color: settings.blitz ? "grey" : "blue",
+                onClick: () => {
+                  saveSettings({ blitz: false });
+                  this.layout();
+                },
+              },
+              {
+                label: "RELÁMPAGO",
+                style: settings.blitz ? "gloss" : "border",
+                color: settings.blitz ? "yellow" : "grey",
+                onClick: () => {
+                  saveSettings({ blitz: true });
+                  this.layout();
+                },
               },
             ],
             [

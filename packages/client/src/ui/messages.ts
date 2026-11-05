@@ -57,6 +57,7 @@ export function describeRuleEvent(s: BoardState, e: RuleEvent, n: Names): string
 
 /** Líneas del diálogo al terminar un tablero. */
 export function boardEndLines(m: MatchState, n: Names): string[] {
+  if (m.resigned !== null) return [`${cap(n.full[m.resigned])} abandonó la partida.`, score(m, n)];
   const sm = m.boards[m.boards.length - 1];
   const w = sm.winner, l = other(w);
   const pts = `${sm.points} punto${sm.points === 1 ? '' : 's'}`;
@@ -73,3 +74,17 @@ export function gameOverLines(m: MatchState, n: Names): string[] {
 }
 
 const score = (m: MatchState, n: Names) => `${n.short[0]} ${m.scores[0]} - ${m.scores[1]} ${n.short[1]}`;
+
+/** Nombres en una partida en línea: `seat` es el asiento de quien juega en este dispositivo. */
+export function onlineNames(seat: PlayerId): Names {
+  const me = seat, rival = other(seat);
+  const pick = <T,>(mine: T, theirs: T): [T, T] => (me === 0 ? [mine, theirs] : [theirs, mine]);
+  void rival;
+  return {
+    avatar: ['person', 'person'],
+    full: [seat === 0 ? 'Jugador 1 (tú)' : 'Jugador 1', seat === 1 ? 'Jugador 2 (tú)' : 'Jugador 2'],
+    card: pick('TÚ', 'RIVAL'),
+    short: pick('TÚ', 'RIV'),
+    win: pick('¡Ganaste!', '¡Gana tu rival!'),
+  };
+}

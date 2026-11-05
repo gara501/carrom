@@ -1,0 +1,10 @@
+**/node_modules
+build
+dist
+.preview-build
+.preview-pack.tgz
+_to_delete
+packages/client
+!packages/client/package.json
+.git
+docs

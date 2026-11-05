@@ -40,6 +40,10 @@ export interface MatchState {
   /** board = jugándose; between = tablero terminado, falta pasar al siguiente; over = partida terminada. */
   phase: 'board' | 'between' | 'over';
   winner: PlayerId | null;
+  /** Modo relámpago: se juega un solo tablero. */
+  blitz: boolean;
+  /** Jugador que abandonó la partida (null si nadie). */
+  resigned: PlayerId | null;
 }
 
 export type MatchEvent =
@@ -53,7 +57,7 @@ export interface MatchShotResult {
   matchEvents: MatchEvent[];
 }
 
-export function createMatch(firstBreaker: PlayerId = 0): MatchState {
+export function createMatch(firstBreaker: PlayerId = 0, blitz = false): MatchState {
   return {
     scores: [0, 0],
     boards: [],
@@ -62,7 +66,19 @@ export function createMatch(firstBreaker: PlayerId = 0): MatchState {
     board: createBoard(firstBreaker),
     phase: 'board',
     winner: null,
+    blitz,
+    resigned: null,
   };
+}
+
+/** El jugador `loser` abandona: la partida termina y gana el rival. */
+export function resignMatch(prev: MatchState, loser: PlayerId): MatchState {
+  if (prev.phase === 'over') return prev;
+  const m: MatchState = structuredClone(prev);
+  m.phase = 'over';
+  m.winner = loser === 0 ? 1 : 0;
+  m.resigned = loser;
+  return m;
 }
 
 /** Puntos de un tablero terminado, según el marcador previo de la partida. */
@@ -108,9 +124,9 @@ export function applyShot(prev: MatchState, pocketed: readonly PieceKind[]): Mat
     const [a, b] = m.scores;
     const reached = a >= MATCH_RULES.targetPoints || b >= MATCH_RULES.targetPoints;
     const lastBoard = m.boardNumber >= MATCH_RULES.maxBoards;
-    if (reached || (lastBoard && a !== b)) {
+    if (m.blitz || reached || (lastBoard && a !== b)) {
       m.phase = 'over';
-      m.winner = a === b ? sc.winner : a > b ? 0 : 1;
+      m.winner = m.blitz ? sc.winner : a === b ? sc.winner : a > b ? 0 : 1;
       matchEvents.push({ type: 'game-over', winner: m.winner, scores: [...m.scores] as [number, number] });
     } else {
       m.phase = 'between'; // empate tras el último tablero => tablero extra

@@ -25,7 +25,7 @@ export class Scoreboard {
   private static keyOf(m: MatchState, w: number) {
     const b = m.board;
     return [w, m.scores, m.boardNumber, b.current, b.pocketed.white, b.pocketed.black, b.queen, b.queenOwner,
-      b.owed, b.players[0].color, m.phase].join('|');
+      b.owed, b.players[0].color, m.phase, m.blitz].join('|');
   }
 
   /** Centro de la tarjeta del jugador en px de canvas (destino de las fichas que vuelan al marcador). */
@@ -74,14 +74,15 @@ export class Scoreboard {
 
     // Centro (o línea bajo las tarjetas en pantallas estrechas): tablero y objetivo
     const cx = W / 2;
-    const label = m.boardNumber > MATCH_RULES.maxBoards ? 'TABLERO EXTRA' : `TABLERO ${m.boardNumber}/${MATCH_RULES.maxBoards}`;
+    const label = m.blitz ? 'RELÁMPAGO' : m.boardNumber > MATCH_RULES.maxBoards ? 'TABLERO EXTRA' : `TABLERO ${m.boardNumber}/${MATCH_RULES.maxBoards}`;
+    const goal = m.blitz ? 'un solo tablero' : `a ${MATCH_RULES.targetPoints} puntos`;
     if (narrow) {
-      this.container.add(addText(s, cx, margin + cardH + u(17), `${label}  ·  a ${MATCH_RULES.targetPoints} puntos`, 11, { color: '#2b3a55' }));
+      this.container.add(addText(s, cx, margin + cardH + u(17), `${label}  ·  ${goal}`, 11, { color: '#2b3a55' }));
     } else {
       const cy = margin + cardH / 2;
       this.container.add([
         addText(s, cx, cy - u(10), label, 12, { color: '#2b3a55' }),
-        addText(s, cx, cy + u(10), `a ${MATCH_RULES.targetPoints} puntos`, 11, { color: '#5b6b86' }),
+        addText(s, cx, cy + u(10), goal, 11, { color: '#5b6b86' }),
       ]);
     }
   }
@@ -100,10 +101,11 @@ export class Scoreboard {
     this.container.add([glow, panel, g]);
 
     const coinFill = color === 'white' ? PAL.coinWhite : PAL.coinBlack;
-    const coinEdge = color === 'white' ? 0xc7d1e2 : 0x1a2336;
+    const coinEdge = color === 'white' ? 0x6f7d99 : 0x1a2336; // borde marcado: la blanca no se pierde sobre la tarjeta blanca
+    const white = color === 'white';
     const cr = u(13);
     g.fillStyle(coinFill, 1).fillCircle(x + u(26), y + u(26), cr);
-    g.lineStyle(u(2), coinEdge, 1).strokeCircle(x + u(26), y + u(26), cr);
+    g.lineStyle(u(white ? 2.5 : 2), coinEdge, 1).strokeCircle(x + u(26), y + u(26), cr);
 
     this.avatar(g, x + u(26) + u(11), y + u(26) + u(11), this.names.avatar[id]);
 
@@ -129,13 +131,13 @@ export class Scoreboard {
         // pieza recién embolsada: aparece con un pequeño rebote
         const pop = s.add.graphics({ x: dx, y: ty });
         pop.fillStyle(coinFill, 1).fillCircle(0, 0, dotR);
-        pop.lineStyle(u(1.5), coinEdge, 1).strokeCircle(0, 0, dotR);
+        pop.lineStyle(u(white ? 2 : 1.5), coinEdge, 1).strokeCircle(0, 0, dotR);
         pop.setScale(2.4);
         s.tweens.add({ targets: pop, scale: 1, duration: 420, ease: 'Back.easeOut' });
         this.container.add(pop);
       } else if (i < filled) {
         g.fillStyle(coinFill, 1).fillCircle(dx, ty, dotR);
-        g.lineStyle(u(1.5), coinEdge, 1).strokeCircle(dx, ty, dotR);
+        g.lineStyle(u(white ? 2 : 1.5), coinEdge, 1).strokeCircle(dx, ty, dotR);
       } else {
         g.lineStyle(u(1.5), 0xb9c4d8, 1).strokeCircle(dx, ty, dotR);
       }
